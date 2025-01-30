@@ -4,6 +4,139 @@ import math
 import random
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+import shap
+import matplotlib.pyplot as plt
+import matplotlib
+
+plt.rcParams['figure.figsize'] = [8, 14]
+
+
+def bacteria_name(x):
+    if '|' not in x:
+        return x
+    if x.split('|')[6].replace('s__', '') != 'unknown':
+        return x.split('|')[6].replace('s__', '')
+    elif x.split('|')[5].replace('g__', '') != 'unknown':
+        return x.split('|')[5].replace('g__', '') + ' ' + x.split('|')[9]
+    elif x.split('|')[4].replace('f__', '') != 'unknown':
+        return x.split('|')[4].replace('f__', '') + ' ' + x.split('|')[9]
+    else:
+        return x.split('|')[9]
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.stats import ttest_rel, ttest_ind, mannwhitneyu
+from scipy.stats import pearsonr, spearmanr
+
+from scipy.stats import rankdata
+
+#from skbio.diversity.alpha import shannon
+
+
+def do_correl_pearson(ser1, ser2, name1='microbiome column', name2='phenotype column'):
+    fig = plt.figure(figsize=(5, 5))
+    ax = fig.add_subplot(111)
+    joined = pd.concat([ser1, ser2], axis=1).dropna()
+    ax.plot(joined[ser1.name], joined[ser2.name], 'o', color='DarkGrey', markersize=10, mew=0, alpha=0.7)
+    ax.set_xlabel(name1)
+    ax.set_ylabel(name2)
+
+    print(pearsonr(joined[ser1.name], joined[ser2.name]))
+    print(spearmanr(joined[ser1.name], joined[ser2.name]))
+    ax.grid()
+    plt.show()
+
+
+def do_pearson(ser1, ser2, name1='microbiome column', name2='phenotype column'):
+    joined = pd.concat([ser1, ser2], axis=1).dropna()
+    return pearsonr(joined[ser1.name], joined[ser2.name])
+
+
+def do_mw(ser1, ser2, name1='microbiome column', name2='phenotype column'):
+    return mannwhitneyu(ser1[ser1.index.isin(ser2[ser2 == True].index)],
+                        ser1[ser1.index.isin(ser2[ser2 == False].index)])
+
+
+def do_mw(ser1, ser2, name1='microbiome column', name2='phenotype column'):
+    return mannwhitneyu(ser1.values, ser2.values)
+
+
+def do_mw_boxplot(ser1, ser2, name1='microbiome column', name2='phenotype column'):
+    fig, ax = plt.subplots()
+    joined = pd.concat([ser1, ser2], axis=1).dropna()
+    joined.boxplot(ser1.name, by=ser2.name, ax=ax)
+    # ax.set_title('')
+    plt.show()
+
+
+def do_mw_boxplot_2samp(ser1, ser2, name1='microbiome column', name2='phenotype column'):
+    fig = plt.figure(figsize=(5, 5))
+    ax = fig.add_subplot(111)
+    ser1.name = 'abund'
+    ser1 = pd.DataFrame(ser1)
+    ser2.name = 'abund'
+    ser2 = pd.DataFrame(ser2)
+    ser1['is_t1d'] = 1
+    ser2['is_t1d'] = 0
+    joined = ser1.append(ser2)
+    joined.boxplot('abund', by='is_t1d', ax=ax)
+    # ax.set_title('')
+    plt.show()
+
+
+def shannon_divercity(ser):
+    return shannon(ser[ser > 0.0001].values)
+
+
+def richness(ser):
+    return ser[ser > 0.0001].shape[0]
+
+
+def fdr_pval(p_vals):
+    ranked_p_values = rankdata(p_vals)
+    fdr = p_vals * len(p_vals) / ranked_p_values
+    fdr[fdr > 1] = 1
+
+    return fdr
+
+
+def compare_2_groups(df, group1, group2, group1_name='treated', group2_name='untreated'):
+    comparison_table = pd.DataFrame(columns=[group1_name + ' size', group2_name + ' size',
+                                             group1_name + ' mean', group1_name + ' std', \
+                                             group2_name + ' mean', group2_name + ' std',
+                                             'ttest_pvalue', 'mw_pvalue'])
+    df1 = df.copy()
+    df1['group_name'] = df1.index.map(lambda x: group1_name if x in group1 else group2_name)
+    #  df1.to_csv(name+'_all_data.csv')
+    signif_cols = []
+    comparison_table.loc['number of samples', group1_name + ' mean'] = len(set(group1))
+    comparison_table.loc['number of samples', group2_name + ' mean'] = len(set(group2))
+    for col in df.columns:
+        group1 = [g for g in group1 if g in df.index]
+        group2 = [g for g in group2 if g in df.index]
+        A = df[col].loc[group1].dropna().values
+        B = df[col].loc[group2].dropna().values
+        comparison_table.loc[col, group1_name + ' size'] = df[col].loc[group1].dropna().shape[0]
+        comparison_table.loc[col, group2_name + ' size'] = df[col].loc[group2].dropna().shape[0]
+        comparison_table.loc[col, group1_name + ' mean'] = df[col].loc[group1].dropna().mean()
+        comparison_table.loc[col, group1_name + ' std'] = df[col].loc[group1].dropna().std()
+        comparison_table.loc[col, group2_name + ' mean'] = df[col].loc[group2].dropna().mean()
+        comparison_table.loc[col, group2_name + ' std'] = df[col].loc[group2].dropna().std()
+        comparison_table.loc[col, 'ttest_pvalue'] = ttest_ind(A, B)[1]
+        try:
+            comparison_table.loc[col, 'mw_pvalue'] = mannwhitneyu(A, B)[1]
+        except:
+            comparison_table.loc[col, 'mw_pvalue'] = 1
+    comparison_table['mw_pvalue']=comparison_table['mw_pvalue'].fillna(1)
+    comparison_table['fdr_mw'] = fdr_pval(comparison_table['mw_pvalue'].values)
+    comparison_table = comparison_table.sort_values('fdr_mw')
+    return comparison_table
+
+
 def find_match(df, TREATMENT='treatment', koef=2):
     random.seed(42)
     df[TREATMENT] = df[TREATMENT].astype(bool)
@@ -34,17 +167,16 @@ def find_match(df, TREATMENT='treatment', koef=2):
         # Match the most similar untreated record to each treated record
         if row[TREATMENT]:
             if random.random()<skip_chance:
-                matched_df = matched_df.append(row)
+                matched_df = pd.concat([matched_df, row], ignore_index=False)
                 continue
             s = row.loc['logit']
             matched_neighbours_df = df_not_treated.iloc[(df_not_treated['logit']-s).abs().argsort()[:koef]]
             matched_neighbours_df['match'] = ind
-            matched_df = matched_df.append(matched_neighbours_df)
-            matched_df = matched_df.append(row)
+           # print(matched_neighbours_df)
+            matched_df = pd.concat([matched_df, matched_neighbours_df], ignore_index=False)
+            matched_df = pd.concat([matched_df, pd.DataFrame(row).T], ignore_index=False)
             df_not_treated = df_not_treated[~df_not_treated.index.isin(matched_neighbours_df.index)]
     return matched_df
-
-
 RENAME_DICT = {'age': 'Age',
                'bt__triglycerides': 'Triglycerides [mg/dL]',
                'bt__glucose': 'Fasting glucose [mg/dL]',
@@ -75,7 +207,7 @@ REF_COLOR = "k"
 FEMALE_COLOR = "C1"   #sns.color_palette('vlag')[-1]
 MALE_COLOR = "C0"  #sns.color_palette('vlag')[0]
 ALL_COLOR = "C5"
-FONTSIZE = 15
+FONTSIZE = 7
 DPI = 400
 AGE_MIN = 30
 AGE_MAX = 75
