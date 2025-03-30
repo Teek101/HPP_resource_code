@@ -3,8 +3,7 @@ the source code for the figures and analyses for paper The Human Phenotype Proje
 
 # HPP Resource Code
 
-10.5281/zenodo.14855715
-
+10.5281/zenodo.14855716
 ## Overview
 This repository contains the source code and Jupyter Notebooks used to generate the figures and analyses for the paper "The Human Phenotype Project: Deep phenotyping of the health-disease continuum"".
 
